@@ -8,13 +8,14 @@
 #define ECHO_PIN 4
 
 // Definições do LCD I2C
-#define LCD_ADDRESS 0x27 // Endereço I2C do seu LCD (verifique o seu)
+#define LCD_ADDRESS 0x27 
 #define LCD_COLUMNS 16
 #define LCD_ROWS 2
 LiquidCrystal_I2C lcd(LCD_ADDRESS, LCD_COLUMNS, LCD_ROWS);
 
 // Definições do Wi-Fi
-const char* ssid = "Wokwi-GUEST";
+const char* ssid = "Wokwi-GUEST"; 
+const char* password = ""; 
 
 // Definições do MQTT
 const char* mqtt_server = "broker.hivemq.com";
@@ -29,9 +30,10 @@ void setup() {
     pinMode(TRIG_PIN, OUTPUT);
     pinMode(ECHO_PIN, INPUT);
 
-    Wire.begin(); // Inicializa a comunicação I2C
-    lcd.init(); // Inicializa o LCD
-    lcd.backlight(); // Liga a luz de fundo do LCD
+    Wire.begin(); 
+    lcd.init(); 
+    lcd.backlight(); 
+    lcd.setCursor(0, 0); 
     lcd.print("Nivel da agua:");
 
     setup_wifi();
@@ -44,7 +46,7 @@ void setup_wifi() {
     Serial.print("Conectando-se a ");
     Serial.println(ssid);
 
-    WiFi.begin(ssid);
+    WiFi.begin(ssid, password); 
 
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
@@ -60,7 +62,10 @@ void setup_wifi() {
 void reconnect() {
     while (!client.connected()) {
         Serial.print("Tentando conexão MQTT...");
-        if (client.connect("ESP32Client")) {
+        
+        String clientId = "ESP32Client-";
+        clientId += String(WiFi.macAddress());
+        if (client.connect(clientId.c_str())) {
             Serial.println("Conectado ao MQTT");
         } else {
             Serial.print("falhou, rc=");
@@ -77,32 +82,54 @@ void loop() {
     }
     client.loop();
 
-    long duration, distance;
+    long duration;
+    float distance_float_intermediate;
+    long distance_corrected; 
+
+    // Realiza a leitura do sensor ultrassônico
     digitalWrite(TRIG_PIN, LOW);
     delayMicroseconds(2);
     digitalWrite(TRIG_PIN, HIGH);
     delayMicroseconds(10);
     digitalWrite(TRIG_PIN, LOW);
     duration = pulseIn(ECHO_PIN, HIGH);
-    distance = (duration / 2) / 29.1;
+
+    // Calcula a distância usando ponto flutuante para maior precisão
+    if (duration > 0) { 
+        distance_float_intermediate = (float)duration / 58.2f;
+        distance_corrected = (long)distance_float_intermediate - 1;
+
+  
+        if (distance_corrected < 0) {
+            distance_corrected = 0; 
+        }
+
+    } else {
+        distance_corrected = 0;
+        Serial.println("Erro na leitura do sensor.");
+    }
+    
 
     Serial.print("Distância: ");
-    Serial.print(distance);
+    Serial.print(distance_corrected); 
     Serial.println(" cm");
 
     // Exibe o nível no LCD I2C
     lcd.setCursor(0, 1);
-    lcd.print("                "); // Limpa a linha
+    lcd.print("                "); 
     lcd.setCursor(0, 1);
-    lcd.print(distance);
+    lcd.print(distance_corrected);
     lcd.print(" cm");
 
     // Envia dados para o MQTT
-    if (client.publish(mqtt_topic, String(distance).c_str())) {
+    char msgBuffer[10]; 
+    sprintf(msgBuffer, "%ld", distance_corrected);
+
+    if (client.publish(mqtt_topic, msgBuffer)) {
         Serial.println("Mensagem MQTT publicada com sucesso!");
     } else {
         Serial.println("Falha ao publicar mensagem MQTT.");
     }
 
-    delay(1000);
+    delay(2000); 
 }
